@@ -4,10 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AniVerse JBK | Galería Anime 2026</title>
-
-    <!-- SDK de Supabase -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>a
-
     <style>
         :root {
             --bg: #0a0a0f; --surface: #14141c; --primary: #ff0055;
@@ -30,9 +26,8 @@
             padding:8px 20px; border:none; border-radius:8px; cursor:pointer;
             font-weight:700; font-size:13px; transition:all 0.2s;
         }
-        button:disabled { opacity:0.6; cursor:not-allowed; }
         .btn-primary { background:var(--primary); color:white; }
-        .btn-primary:hover:not(:disabled) { filter:brightness(1.2); }
+        .btn-primary:hover { filter:brightness(1.2); }
         .btn-secondary { background:var(--surface); color:var(--text); border:1px solid rgba(255,255,255,0.1); }
         .btn-secondary:hover { border-color:var(--text); }
         .btn-upload { background:var(--secondary); color:#000; }
@@ -40,10 +35,7 @@
         .btn-download { background:var(--success); color:#000; display:inline-flex; align-items:center; gap:6px; }
         .btn-download:hover { filter:brightness(1.1); transform:translateY(-1px); }
 
-        .gallery-header { padding:30px 30px 10px; display:flex; justify-content:space-between; align-items:center; }
-        .cloud-status { font-size:12px; font-weight:700; padding:5px 12px; border-radius:20px; }
-        .cloud-status.ok { color:var(--success); background:rgba(0,255,136,0.1); }
-        .cloud-status.bad { color:var(--primary); background:rgba(255,0,85,0.1); }
+        .gallery-header { padding:30px 30px 10px; }
         .gallery-grid {
             padding:20px 30px; display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
             gap:20px; flex:1;
@@ -114,9 +106,8 @@
             position:fixed; bottom:20px; right:20px; background:var(--surface);
             border-left:3px solid var(--success); padding:12px 20px; border-radius:8px;
             font-size:14px; z-index:400; animation:slideIn 0.3s ease;
-            box-shadow:0 5px 20px rgba(0,0,0,0.5); max-width:350px;
+            box-shadow:0 5px 20px rgba(0,0,0,0.5);
         }
-        .toast.error { border-left-color:var(--primary); }
         @keyframes slideIn { from{transform:translateX(100%);opacity:0} to{transform:translateX(0);opacity:1} }
     </style>
 </head>
@@ -129,7 +120,6 @@
 
     <div class="gallery-header">
         <h2 style="font-size:24px;">Galería de la Comunidad</h2>
-        <span class="cloud-status bad" id="cloud-status">⏳ Conectando...</span>
     </div>
     <div class="gallery-grid" id="gallery-grid"></div>
 
@@ -148,7 +138,7 @@
             </div>
             <div class="modal-actions">
                 <button class="btn-secondary" onclick="App.closeUpload()">Cancelar</button>
-                <button class="btn-primary" id="publish-btn" onclick="App.publishImage()">Publicar</button>
+                <button class="btn-primary" onclick="App.publishImage()">Publicar</button>
             </div>
         </div>
     </div>
@@ -169,67 +159,20 @@
     </footer>
 
 <script>
-// ============================================
-// CONEXIÓN CON SUPABASE (NUBE)
-// ============================================
-const SUPABASE_URL = 'https://iqpucamkfdisjmuamhfe.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_cyPcOMdiqZm__Lvf-qcIIA_tyy-eQK0';
-
-let supabase = null;
-if (window.supabase && window.supabase.createClient) {
-    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-}
+const DB = {
+    getImages() { return JSON.parse(localStorage.getItem('jbk_images') || '[]'); },
+    saveImages(i) { localStorage.setItem('jbk_images', JSON.stringify(i)); }
+};
 
 const App = {
-    pendingFile: null,
+    pendingImage: null,
     currentImage: null,
 
-    async init() {
-        if (!supabase) {
-            this.setCloudStatus(false, '⚠️ SDK no cargó');
-            this.renderGallery([]);
-            return;
-        }
-        await this.loadImages();
-        this.subscribeRealtime();
-    },
+    init() { this.renderGallery(); },
 
-    setCloudStatus(ok, text) {
-        const el = document.getElementById('cloud-status');
-        el.textContent = text;
-        el.className = 'cloud-status ' + (ok ? 'ok' : 'bad');
-    },
-
-    async loadImages() {
-        try {
-            const { data, error } = await supabase
-                .from('posts')
-                .select('*')
-                .order('created_at', { ascending: false });
-
-            if (error) throw error;
-
-            this.setCloudStatus(true, '☁️ Nube conectada');
-            this.renderGallery(data || []);
-        } catch (e) {
-            console.error('Error Supabase:', e);
-            this.setCloudStatus(false, '⚠️ Error de conexión');
-            this.renderGallery([]);
-        }
-    },
-
-    subscribeRealtime() {
-        supabase
-            .channel('posts-realtime')
-            .on('postgres_changes',
-                { event: '*', schema: 'public', table: 'posts' },
-                () => this.loadImages()
-            )
-            .subscribe();
-    },
-
-    renderGallery(images) {
+    renderGallery() {
         const grid = document.getElementById('gallery-grid');
+        const images = DB.getImages().sort((a,b) => b.id - a.id);
 
         if (!images.length) {
             grid.innerHTML = `
@@ -241,25 +184,12 @@ const App = {
             return;
         }
 
-        grid.innerHTML = '';
-        images.forEach(img => {
-            const card = document.createElement('div');
-            card.className = 'card';
-            card.onclick = () => this.openLightbox(img.image_url, img.title);
-
-            const imgEl = document.createElement('img');
-            imgEl.src = img.image_url;
-            imgEl.alt = img.title;
-            imgEl.loading = 'lazy';
-
-            const info = document.createElement('div');
-            info.className = 'card-info';
-            info.innerHTML = '<div class="card-title"></div>';
-            info.querySelector('.card-title').textContent = img.title;
-
-            card.append(imgEl, info);
-            grid.appendChild(card);
-        });
+        grid.innerHTML = images.map(img => `
+            <div class="card" onclick="App.openLightbox('${img.img}','${img.title.replace(/'/g,"\\'")}')">
+                <img src="${img.img}" alt="${img.title}" loading="lazy">
+                <div class="card-info"><div class="card-title">${img.title}</div></div>
+            </div>
+        `).join('');
     },
 
     openLightbox(src, title) {
@@ -276,28 +206,20 @@ const App = {
         this.currentImage = null;
     },
 
-    async downloadCurrent() {
+    downloadCurrent() {
         if (!this.currentImage) return;
-        try {
-            const res = await fetch(this.currentImage.src);
-            const blob = await res.blob();
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            const safeName = this.currentImage.title.replace(/[^a-zA-Z0-9áéíóúñü\s]/gi,'').replace(/\s+/g,'_').toLowerCase();
-            link.download = `${safeName}_aniverse-jbk.jpg`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-            this.toast(`⬇ Descargando: ${this.currentImage.title}`);
-        } catch (e) {
-            this.toast('❌ Error al descargar', true);
-        }
+        const link = document.createElement('a');
+        link.href = this.currentImage.src;
+        const safeName = this.currentImage.title.replace(/[^a-zA-Z0-9áéíóúñü\s]/gi,'').replace(/\s+/g,'_').toLowerCase();
+        link.download = `${safeName}_aniverse-jbk.jpg`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        this.toast(`⬇ Descargando: ${this.currentImage.title}`);
     },
 
     openUpload() {
-        this.pendingFile = null;
+        this.pendingImage = null;
         document.getElementById('upload-title').value = '';
         document.getElementById('preview-area').classList.remove('has-image');
         document.getElementById('preview-img').src = '';
@@ -306,61 +228,23 @@ const App = {
 
     closeUpload() { document.getElementById('upload-modal').classList.remove('active'); },
 
-    async publishImage() {
+    publishImage() {
         const title = document.getElementById('upload-title').value.trim();
-        const btn = document.getElementById('publish-btn');
-
         if (!title) { this.toast('⚠️ Escribe un título'); return; }
-        if (!this.pendingFile) { this.toast('⚠️ Selecciona una imagen primero'); return; }
-
-        btn.disabled = true;
-        btn.textContent = 'Subiendo...';
-
-        try {
-            const extension = (this.pendingFile.name.split('.').pop() || 'jpg').toLowerCase();
-            const fileName = Date.now() + '-' + Math.random().toString(36).slice(2, 10) + '.' + extension;
-
-            const { error: uploadError } = await supabase.storage
-                .from('images')
-                .upload(fileName, this.pendingFile, {
-                    contentType: this.pendingFile.type,
-                    upsert: false
-                });
-
-            if (uploadError) throw uploadError;
-
-            const { data: urlData } = supabase.storage
-                .from('images')
-                .getPublicUrl(fileName);
-
-            const { error: dbError } = await supabase
-                .from('posts')
-                .insert([{ title: title, image_url: urlData.publicUrl }]);
-
-            if (dbError) throw dbError;
-
-            this.closeUpload();
-            this.toast('✅ Imagen publicada en AniVerse JBK');
-            await this.loadImages();
-
-        } catch (e) {
-            console.error('Error al publicar:', e);
-            this.toast('❌ ' + (e.message || 'No se pudo publicar'), true);
-        } finally {
-            btn.disabled = false;
-            btn.textContent = 'Publicar';
-        }
+        if (!this.pendingImage) { this.toast('⚠️ Selecciona una imagen primero'); return; }
+        const images = DB.getImages();
+        images.push({ id: Date.now(), title, img: this.pendingImage });
+        DB.saveImages(images);
+        this.closeUpload();
+        this.renderGallery();
+        this.toast('✅ Imagen publicada en AniVerse JBK');
     },
 
-    toast(msg, isError = false) {
-        const existing = document.querySelector('.toast');
-        if (existing) existing.remove();
-
+    toast(msg) {
         const t = document.createElement('div');
-        t.className = 'toast' + (isError ? ' error' : '');
-        t.textContent = msg;
+        t.className = 'toast'; t.textContent = msg;
         document.body.appendChild(t);
-        setTimeout(() => t.remove(), 4000);
+        setTimeout(() => t.remove(), 3000);
     }
 };
 
@@ -368,10 +252,9 @@ document.getElementById('file-input').addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) { App.toast('⚠️ Máximo 5MB por imagen'); return; }
-
-    App.pendingFile = file;
     const reader = new FileReader();
     reader.onload = ev => {
+        App.pendingImage = ev.target.result;
         document.getElementById('preview-img').src = ev.target.result;
         document.getElementById('preview-area').classList.add('has-image');
     };
