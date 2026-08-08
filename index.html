@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AniVerse JBK | Galería Anime 2026</title>
     
-    <!-- SDK de Supabase para conectar en tiempo real -->
+    <!-- SDK de Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
     <style>
         :root {
             --bg: #0a0a0f; --surface: #14141c; --primary: #ff0055;
             --secondary: #00e5ff; --text: #e0e0e0; --muted: #6b6b7b;
-            --success: #00ff88; --loading: #ffaa00;
+            --success: #00ff88;
         }
         * { margin:0; padding:0; box-sizing:border-box; }
         body { background:var(--bg); color:var(--text); font-family:'Segoe UI',sans-serif; min-height:100vh; display:flex; flex-direction:column; }
@@ -30,9 +30,8 @@
             padding:8px 20px; border:none; border-radius:8px; cursor:pointer;
             font-weight:700; font-size:13px; transition:all 0.2s;
         }
-        button:disabled { opacity:0.6; cursor:not-allowed; }
         .btn-primary { background:var(--primary); color:white; }
-        .btn-primary:hover:not(:disabled) { filter:brightness(1.2); }
+        .btn-primary:hover { filter:brightness(1.2); }
         .btn-secondary { background:var(--surface); color:var(--text); border:1px solid rgba(255,255,255,0.1); }
         .btn-secondary:hover { border-color:var(--text); }
         .btn-upload { background:var(--secondary); color:#000; }
@@ -40,11 +39,7 @@
         .btn-download { background:var(--success); color:#000; display:inline-flex; align-items:center; gap:6px; }
         .btn-download:hover { filter:brightness(1.1); transform:translateY(-1px); }
 
-        .gallery-header { padding:30px 30px 10px; display:flex; justify-content:space-between; align-items:center; }
-        .status-indicator { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted); }
-        .status-dot { width:8px; height:8px; border-radius:50%; background:var(--success); animation:pulse 2s infinite; }
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-
+        .gallery-header { padding:30px 30px 10px; }
         .gallery-grid {
             padding:20px 30px; display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
             gap:20px; flex:1;
@@ -60,7 +55,7 @@
             aspect-ratio:3/4; transition:transform 0.3s; cursor:pointer;
         }
         .card:hover { transform:translateY(-5px); }
-        .card img { width:100%; height:100%; object-fit:cover; user-select:none; }
+        .card img { width:100%; height:100%; object-fit:cover; user-select:none; -webkit-user-drag:none; }
         .card-info {
             position:absolute; bottom:0; left:0; right:0; padding:15px;
             background:linear-gradient(to top,rgba(0,0,0,0.9),transparent); pointer-events:none;
@@ -94,10 +89,6 @@
         .form-group input:focus { border-color:var(--secondary); }
         .modal-actions { display:flex; gap:10px; margin-top:20px; }
         .modal-actions button { flex:1; padding:12px; }
-
-        .progress-bar { height:4px; background:var(--bg); border-radius:2px; overflow:hidden; margin-top:10px; display:none; }
-        .progress-bar.active { display:block; }
-        .progress-fill { height:100%; background:var(--secondary); width:0%; transition:width 0.3s; }
 
         .lightbox {
             position:fixed; inset:0; background:rgba(0,0,0,0.95); z-index:300;
@@ -134,10 +125,6 @@
 
     <div class="gallery-header">
         <h2 style="font-size:24px;">Galería de la Comunidad</h2>
-        <div class="status-indicator">
-            <div class="status-dot"></div>
-            <span>En línea - Tiempo real</span>
-        </div>
     </div>
     <div class="gallery-grid" id="gallery-grid"></div>
 
@@ -154,9 +141,6 @@
                 <label>Título</label>
                 <input type="text" id="upload-title" placeholder="Ej: Naruto Sage Mode">
             </div>
-            <div class="progress-bar" id="progress-bar">
-                <div class="progress-fill" id="progress-fill"></div>
-            </div>
             <div class="modal-actions">
                 <button class="btn-secondary" onclick="App.closeUpload()">Cancelar</button>
                 <button class="btn-primary" id="publish-btn" onclick="App.publishImage()">Publicar</button>
@@ -164,7 +148,7 @@
         </div>
     </div>
 
-    <!-- LIGHTBOX -->
+    <!-- LIGHTBOX CON DESCARGA -->
     <div class="lightbox" id="lightbox" onclick="if(event.target===this)App.closeLightbox()">
         <button class="lb-close" onclick="App.closeLightbox()">&times;</button>
         <img id="lb-img">
@@ -181,55 +165,49 @@
 
 <script>
 // ============================================
-// CONFIGURACIÓN DE SUPABASE
+// CONEXIÓN CON SUPABASE
 // ============================================
 const SUPABASE_URL = 'https://iqpucamkfdisjmuamhfe.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_cyPcOMdiqZm__Lvf-qcIIA_tyy-eQK0';
-
-// Inicializar cliente de Supabase
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ============================================
-// APP PRINCIPAL
-// ============================================
 const App = {
-    pendingFile: null,
+    pendingImage: null,
     currentImage: null,
 
-    async init() {
+    async init() { 
         await this.loadImages();
-        this.subscribeToRealtime();
+        this.subscribeRealtime();
     },
 
-    // Cargar todas las imágenes desde Supabase
+    // Cargar imágenes desde Supabase
     async loadImages() {
-        const grid = document.getElementById('gallery-grid');
-        grid.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-title">Cargando...</div></div>';
-        
-        const { data, error } = await supabase
-            .from('posts')
-            .select('*')
-            .order('created_at', { ascending: false });
+        try {
+            const { data, error } = await supabase
+                .from('posts')
+                .select('*')
+                .order('created_at', { ascending: false });
 
-        if (error) {
-            console.error('Error cargando imágenes:', error);
-            this.toast('❌ Error al cargar la galería', true);
-            return;
+            if (error) {
+                console.error('Error cargando imágenes:', error);
+                this.toast('❌ Error al cargar galería', true);
+                return;
+            }
+
+            this.renderGallery(data || []);
+        } catch (e) {
+            console.error('Error:', e);
+            this.toast('❌ Error de conexión', true);
         }
-
-        this.renderGallery(data || []);
     },
 
-    // Suscripción en tiempo real
-    subscribeToRealtime() {
+    // Escuchar cambios en tiempo real
+    subscribeRealtime() {
         supabase
             .channel('posts-changes')
             .on('postgres_changes', 
                 { event: '*', schema: 'public', table: 'posts' },
-                (payload) => {
-                    console.log('Cambio detectado:', payload);
-                    this.loadImages();
-                }
+                () => this.loadImages()
             )
             .subscribe();
     },
@@ -242,7 +220,7 @@ const App = {
                 <div class="empty-state">
                     <div class="empty-icon">🖼️</div>
                     <div class="empty-title">La galería está vacía</div>
-                    <div class="empty-desc">Sé el primero en publicar. Haz clic en <strong>"＋ Publicar Imagen"</strong>.</div>
+                    <div class="empty-desc">Sé el primero en publicar. Haz clic en <strong>"＋ Publicar Imagen"</strong> para subir tu arte anime favorito.</div>
                 </div>`;
             return;
         }
@@ -260,7 +238,7 @@ const App = {
             
             const info = document.createElement('div');
             info.className = 'card-info';
-            info.innerHTML = `<div class="card-title"></div>`;
+            info.innerHTML = '<div class="card-title"></div>';
             info.querySelector('.card-title').textContent = img.title;
             
             card.append(imgEl, info);
@@ -292,7 +270,9 @@ const App = {
             link.href = url;
             const safeName = this.currentImage.title.replace(/[^a-zA-Z0-9áéíóúñü\s]/gi,'').replace(/\s+/g,'_').toLowerCase();
             link.download = `${safeName}_aniverse-jbk.jpg`;
+            document.body.appendChild(link);
             link.click();
+            document.body.removeChild(link);
             URL.revokeObjectURL(url);
             this.toast(`⬇ Descargando: ${this.currentImage.title}`);
         } catch (e) {
@@ -301,97 +281,72 @@ const App = {
     },
 
     openUpload() {
-        this.pendingFile = null;
+        this.pendingImage = null;
         document.getElementById('upload-title').value = '';
         document.getElementById('preview-area').classList.remove('has-image');
         document.getElementById('preview-img').src = '';
         document.getElementById('upload-modal').classList.add('active');
     },
 
-    closeUpload() { 
-        document.getElementById('upload-modal').classList.remove('active'); 
-    },
+    closeUpload() { document.getElementById('upload-modal').classList.remove('active'); },
 
     async publishImage() {
         const title = document.getElementById('upload-title').value.trim();
         const btn = document.getElementById('publish-btn');
-        const progressBar = document.getElementById('progress-bar');
-        const progressFill = document.getElementById('progress-fill');
-
+        
         if (!title) { this.toast('⚠️ Escribe un título', true); return; }
-        if (!this.pendingFile) { this.toast('⚠️ Selecciona una imagen primero', true); return; }
+        if (!this.pendingImage) { this.toast('⚠️ Selecciona una imagen primero', true); return; }
 
         btn.disabled = true;
         btn.textContent = 'Subiendo...';
-        progressBar.classList.add('active');
-        progressFill.style.width = '30%';
 
         try {
-            // 1. Comprimir imagen
-            const compressedFile = await this.compressImage(this.pendingFile);
-            progressFill.style.width = '50%';
-
-            // 2. Subir imagen al Storage de Supabase
+            // Convertir base64 a Blob
+            const blob = await this.base64ToBlob(this.pendingImage);
+            
+            // Nombre único para el archivo
             const fileName = `${Date.now()}-${Math.random().toString(36).substr(2,9)}.jpg`;
-            const { data: uploadData, error: uploadError } = await supabase.storage
+            
+            // Subir imagen a Supabase Storage
+            const { error: uploadError } = await supabase.storage
                 .from('images')
-                .upload(fileName, compressedFile, {
-                    cacheControl: '3600',
+                .upload(fileName, blob, {
+                    contentType: 'image/jpeg',
                     upsert: false
                 });
 
             if (uploadError) throw uploadError;
-            progressFill.style.width = '75%';
 
-            // 3. Obtener URL pública de la imagen
+            // Obtener URL pública de la imagen
             const { data: urlData } = supabase.storage
                 .from('images')
                 .getPublicUrl(fileName);
 
-            const imageUrl = urlData.publicUrl;
-
-            // 4. Guardar publicación en la base de datos
+            // Guardar en la base de datos
             const { error: dbError } = await supabase
                 .from('posts')
-                .insert([{ title, image_url: imageUrl }]);
+                .insert([{ 
+                    title: title, 
+                    image_url: urlData.publicUrl 
+                }]);
 
             if (dbError) throw dbError;
-            progressFill.style.width = '100%';
 
             this.closeUpload();
             this.toast('✅ Imagen publicada en AniVerse JBK');
             
         } catch (error) {
-            console.error('Error al publicar:', error);
-            this.toast(`❌ Error: ${error.message}`, true);
+            console.error('Error completo:', error);
+            this.toast(`❌ Error: ${error.message || 'No se pudo publicar'}`, true);
         } finally {
             btn.disabled = false;
             btn.textContent = 'Publicar';
-            progressBar.classList.remove('active');
-            progressFill.style.width = '0%';
         }
     },
 
-    compressImage(file) {
-        return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const img = new Image();
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    const MAX_WIDTH = 1200;
-                    const scale = Math.min(MAX_WIDTH / img.width, 1);
-                    canvas.width = img.width * scale;
-                    canvas.height = img.height * scale;
-                    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-                    canvas.toBlob((blob) => {
-                        resolve(new File([blob], file.name, { type: 'image/jpeg' }));
-                    }, 'image/jpeg', 0.85);
-                };
-                img.src = e.target.result;
-            };
-            reader.readAsDataURL(file);
-        });
+    // Convertir base64 a Blob para subir a Supabase
+    base64ToBlob(base64) {
+        return fetch(base64).then(res => res.blob());
     },
 
     toast(msg, isError = false) {
@@ -406,18 +361,13 @@ const App = {
     }
 };
 
-// Manejo de archivos
 document.getElementById('file-input').addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) { 
-        App.toast('⚠️ Máximo 10MB por imagen', true); 
-        return; 
-    }
-    
-    App.pendingFile = file;
+    if (file.size > 5 * 1024 * 1024) { App.toast('⚠️ Máximo 5MB por imagen', true); return; }
     const reader = new FileReader();
     reader.onload = ev => {
+        App.pendingImage = ev.target.result;
         document.getElementById('preview-img').src = ev.target.result;
         document.getElementById('preview-area').classList.add('has-image');
     };
