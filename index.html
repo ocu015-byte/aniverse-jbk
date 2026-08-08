@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AniVerse JBK | Galería Anime 2026</title>
-    <link rel="icon" href="logo.png">
     <style>
         :root {
             --bg: #0a0a0f; --surface: #14141c; --primary: #ff0055;
@@ -19,8 +18,7 @@
             background:rgba(10,10,15,0.95); border-bottom:1px solid rgba(255,255,255,0.05);
             position:sticky; top:0; z-index:100; backdrop-filter:blur(10px);
         }
-        .logo { font-size:26px; font-weight:900; letter-spacing:-1px; display:flex; align-items:center; gap:10px; }
-        .logo img { width:28px; height:28px; border-radius:6px; object-fit:cover; }
+        .logo { font-size:26px; font-weight:900; letter-spacing:-1px; }
         .logo span { color:var(--primary); }
         .logo small { font-size:11px; color:var(--secondary); font-weight:600; vertical-align:super; margin-left:4px; }
 
@@ -116,10 +114,7 @@
 <body>
 
     <header>
-        <div class="logo">
-            <img src="logo.png" alt="JBK Logo">
-            Ani<span>Verse</span><small>JBK</small>
-        </div>
+        <div class="logo">Ani<span>Verse</span><small>JBK</small></div>
         <button class="btn-upload" onclick="App.openUpload()">＋ Publicar Imagen</button>
     </header>
 
